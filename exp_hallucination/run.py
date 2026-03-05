@@ -8,80 +8,14 @@ Discrete curvature at layer l:
   kappa_t^(l) = ||h^(l+1) - 2*h^(l) + h^(l-1)|| / ||h^(l+1) - h^(l-1)||^2
 """
 
-import torch
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from dataset import load_truthfulqa, MANUAL_SENTENCES
 from tqdm import tqdm
-
-
-def load_model(model_name: str = "unsloth/Llama-3.2-1B"):
-    """Load model and tokenizer. Uses MPS on Apple Silicon."""
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"Using device: {device}")
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float32,
-        output_hidden_states=True,
-    ).to(device)
-    model.eval()
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    return model, tokenizer, device
-
-
-def extract_hidden_states(model, tokenizer, text: str, device: str):
-    """
-    Run forward pass, return hidden states after layer norm.
-    Returns: tensor of shape (num_layers+1, seq_len, hidden_dim)
-      - Layer 0 = embedding, layers 1..L = transformer block outputs.
-    """
-    inputs = tokenizer(text, return_tensors="pt").to(device)
-    with torch.no_grad():
-        outputs = model(**inputs, output_hidden_states=True)
-
-    # hidden_states: tuple of (num_layers+1) tensors, each (1, seq_len, d)
-    hidden = torch.stack(outputs.hidden_states, dim=0).squeeze(1)  # (L+1, seq_len, d)
-
-    # Normalize each vector to unit sphere (approximating layer norm projection)
-    hidden = hidden / (hidden.norm(dim=-1, keepdim=True) + 1e-8)
-
-    return hidden, inputs["input_ids"].squeeze(0)
-
-
-def compute_curvature(hidden_states: torch.Tensor) -> np.ndarray:
-    """
-    Compute discrete curvature for each token at each interior layer.
-
-    hidden_states: (num_layers+1, seq_len, d) — normalized
-    Returns: (num_interior_layers, seq_len) curvature values
-      interior layers = layers 1..L-1 (indices where we have both neighbors)
-    """
-    L_plus_1, seq_len, d = hidden_states.shape
-
-    # h[l-1], h[l], h[l+1] for l in 1..L-1
-    h_prev = hidden_states[:-2]   # (L-1, seq_len, d)
-    h_curr = hidden_states[1:-1]  # (L-1, seq_len, d)
-    h_next = hidden_states[2:]    # (L-1, seq_len, d)
-
-    # Second difference (numerator)
-    second_diff = h_next - 2 * h_curr + h_prev  # (L-1, seq_len, d)
-    numerator = second_diff.norm(dim=-1)          # (L-1, seq_len)
-
-    # Chord (denominator)
-    chord = h_next - h_prev                       # (L-1, seq_len, d)
-    chord_norm = chord.norm(dim=-1)               # (L-1, seq_len)
-    denominator = chord_norm ** 2                  # (L-1, seq_len)
-
-    # Avoid division by zero
-    denominator = torch.clamp(denominator, min=1e-10)
-
-    kappa = numerator / denominator  # (L-1, seq_len)
-    return kappa.cpu().numpy()
+from core import load_model, extract_hidden_states, compute_curvature
+from exp_hallucination.dataset import load_truthfulqa, MANUAL_SENTENCES
 
 
 def _save_checkpoint(results, path):
@@ -92,7 +26,6 @@ def _save_checkpoint(results, path):
 
 def _load_checkpoint(path):
     import pickle
-    import os
     if os.path.exists(path):
         with open(path, "rb") as f:
             results = pickle.load(f)
@@ -205,8 +138,6 @@ def run_experiment(layer_range: tuple = (11, 15), dataset: str = "truthfulqa", c
 
 
 if __name__ == "__main__":
-    import sys
-    import os
     import pickle
 
     # Simple dataset selection via sys.argv
@@ -217,10 +148,10 @@ if __name__ == "__main__":
             dataset_choice = arg
         else:
             print(f"Unknown dataset argument: {sys.argv[1]!r}")
-            print("Usage: python curvature.py [truthfulqa|manual|all]")
+            print("Usage: python run.py [truthfulqa|manual|all]")
             sys.exit(1)
 
-    output_dir = "output"
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     os.makedirs(output_dir, exist_ok=True)
 
     checkpoint_path = os.path.join(output_dir, "checkpoint.pkl")

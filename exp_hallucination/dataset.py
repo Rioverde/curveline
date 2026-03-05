@@ -42,9 +42,12 @@ def load_truthfulqa():
 
 # For backward compatibility with existing code
 try:
-    from sentences import SENTENCES as MANUAL_SENTENCES
+    from exp_hallucination.sentences import SENTENCES as MANUAL_SENTENCES
 except ImportError:
-    MANUAL_SENTENCES = []
+    try:
+        from sentences import SENTENCES as MANUAL_SENTENCES
+    except ImportError:
+        MANUAL_SENTENCES = []
 
 # Default SENTENCES variable — uses TruthfulQA if no manual sentences available
 if MANUAL_SENTENCES:
@@ -87,9 +90,9 @@ if __name__ == "__main__":
     examples = load_truthfulqa()
 
     total = len(examples)
-    factual = sum(1 for _, is_h in examples if not is_h)
-    hallucinations = sum(1 for _, is_h in examples if is_h)
-    avg_len = sum(len(text) for text, _ in examples) / total if total > 0 else 0
+    factual = sum(1 for _, is_h, *_ in examples if not is_h)
+    hallucinations = sum(1 for _, is_h, *_ in examples if is_h)
+    avg_len = sum(len(text) for text, *_ in examples) / total if total > 0 else 0
 
     print(f"\n=== Dataset Stats ===")
     print(f"Total examples:      {total}")
@@ -98,7 +101,7 @@ if __name__ == "__main__":
     print(f"Avg text length:     {avg_len:.1f} chars")
 
     print(f"\n=== Sample Entries ===")
-    for i, (text, is_h) in enumerate(examples[:6]):
+    for i, (text, is_h, *_) in enumerate(examples[:6]):
         label = "HALLUCINATION" if is_h else "FACTUAL      "
         preview = text[:120] + ("..." if len(text) > 120 else "")
         print(f"[{i+1}] {label} | {preview}")

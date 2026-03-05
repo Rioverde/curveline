@@ -3,6 +3,7 @@ Visualization of curvature experiment results.
 Generates plots for analysis of curvature vs hallucination correlation.
 """
 
+import os
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,14 +11,21 @@ import seaborn as sns
 from scipy import stats
 from sklearn.metrics import roc_curve, auc, accuracy_score
 
+_DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
-def load_results(path: str = "results.pkl"):
+
+def load_results(path: str = None):
+    if path is None:
+        path = os.path.join(_DEFAULT_OUTPUT_DIR, "results.pkl")
     with open(path, "rb") as f:
         return pickle.load(f)
 
 
-def plot_distribution(results, save_dir: str = "."):
+def plot_distribution(results, save_dir: str = None):
     """Box plot + violin for small N; histogram overlay for large N (>100)."""
+    if save_dir is None:
+        save_dir = _DEFAULT_OUTPUT_DIR
+
     fact_means = [r["mean_curvature_sentence"] for r in results if not r["is_hallucination"]]
     hall_means = [r["mean_curvature_sentence"] for r in results if r["is_hallucination"]]
 
@@ -85,8 +93,11 @@ def plot_distribution(results, save_dir: str = "."):
     return t_stat, p_value, u_stat, u_pvalue
 
 
-def plot_layer_profile(results, save_dir: str = "."):
+def plot_layer_profile(results, save_dir: str = None):
     """Mean curvature per layer for factual vs hallucination sentences (all layers)."""
+    if save_dir is None:
+        save_dir = _DEFAULT_OUTPUT_DIR
+
     fact_layers = []
     hall_layers = []
 
@@ -135,8 +146,11 @@ def plot_layer_profile(results, save_dir: str = "."):
     print("Saved: curvature_layer_profile.png")
 
 
-def plot_heatmap(results, save_dir: str = "."):
+def plot_heatmap(results, save_dir: str = None):
     """Heatmap of curvature per token per layer for a few example sentences."""
+    if save_dir is None:
+        save_dir = _DEFAULT_OUTPUT_DIR
+
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
 
     facts = [r for r in results if not r["is_hallucination"]]
@@ -190,8 +204,11 @@ def plot_heatmap(results, save_dir: str = "."):
     print("Saved: curvature_heatmaps.png")
 
 
-def plot_scatter(results, save_dir: str = "."):
+def plot_scatter(results, save_dir: str = None):
     """Scatter plot: mean vs max curvature, colored by label."""
+    if save_dir is None:
+        save_dir = _DEFAULT_OUTPUT_DIR
+
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for r in results:
@@ -219,8 +236,11 @@ def plot_scatter(results, save_dir: str = "."):
     print("Saved: curvature_scatter.png")
 
 
-def plot_roc(results, save_dir: str = "."):
+def plot_roc(results, save_dir: str = None):
     """ROC curve using mean_curvature_sentence as classifier score."""
+    if save_dir is None:
+        save_dir = _DEFAULT_OUTPUT_DIR
+
     scores = np.array([r["mean_curvature_sentence"] for r in results])
     labels = np.array([int(r["is_hallucination"]) for r in results])
 
@@ -340,8 +360,7 @@ def print_stats(results):
 
 
 if __name__ == "__main__":
-    import os
-    output_dir = "output"
+    output_dir = _DEFAULT_OUTPUT_DIR
     results = load_results(os.path.join(output_dir, "results.pkl"))
     t, p, u, up = plot_distribution(results, save_dir=output_dir)
     plot_layer_profile(results, save_dir=output_dir)
